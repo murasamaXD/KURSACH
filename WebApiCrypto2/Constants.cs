@@ -8,6 +8,6 @@
         public static string ApiKeyCap = "cea173e5-bcbe-484b-95e9-42bd486d7159";
         public static string ApiHost = "coingecko.p.rapidapi.com";
         public static string ApiKeyRapid = "9c9e7b81c0msh290ab7a973d2150p155236jsnfab98b8bbe7f";
-        public static string Connect = "Host:localhost;Username=murasama;Password:yjdsq6002ltym;Database:crypto";
+        public static string Connect = "Host=localhost;Username=postgres;Password=zlt,bk6002;Database=postgres";
     }
 }

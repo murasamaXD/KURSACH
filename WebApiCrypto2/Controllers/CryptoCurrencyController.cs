@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using WebApiCrypto2.Clients;
 using WebApiCrypto2.Models;
+using System.Diagnostics;
 
 namespace WebApiCrypto2.Controllers
 {
@@ -25,7 +26,9 @@ namespace WebApiCrypto2.Controllers
 
                 if (cryptoCurrencyData != null && cryptoCurrencyData.ContainsKey(currency))
                 {
-                    // Повертаємо значення у форматі рядка
+                    var database = new Database();
+                    await database.InsertCryptoCurrencyAsync(new CryptoCurrency { cryptocurrencies = cryptoCurrencyData });
+
                     return cryptoCurrencyData[currency].usd.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 }
                 return NotFound("Currency not found");
@@ -33,6 +36,7 @@ namespace WebApiCrypto2.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching cryptocurrency price.");
+                Debug.WriteLine($"Controller error: {ex.Message}");
                 return StatusCode(500, "Internal server error");
             }
         }
