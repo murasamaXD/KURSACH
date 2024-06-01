@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.Http;
@@ -10,6 +11,7 @@ using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using TelegramBot;
 
 namespace TelegramBotCrypto
 {
@@ -58,6 +60,14 @@ namespace TelegramBotCrypto
             {
                 await HandleStartCommandAsync(message);
             }
+            else if (message.Text == "Показати терміни")
+            {
+                await HandleShowTermsCommandAsync(message);
+            }
+            else if (message.Text.StartsWith("Термін:", StringComparison.InvariantCultureIgnoreCase))
+            {
+                await HandleTermDetailCommandAsync(message);
+            }
             else if (userStates.TryGetValue(message.Chat.Id, out string state))
             {
                 if (state == "waiting_for_crypto_name")
@@ -103,15 +113,16 @@ namespace TelegramBotCrypto
         {
             var replyKeyboardMarkup = new ReplyKeyboardMarkup(new[]
             {
-                new KeyboardButton[] { "Отримати курс", "Конвертація", "Створення криптогаманця" }
-            })
+        new KeyboardButton[] { "Отримати курс", "Конвертація" },
+        new KeyboardButton[] { "Показати терміни" }
+    })
             {
                 ResizeKeyboard = true
             };
 
             await botClient.SendTextMessageAsync(
                 chatId: message.Chat.Id,
-                text: "Привіт! Я Cryptobot! Мої функції: \n-Надавати тобі актуальну інформацію про курс криптовалюти \n-Конвертувати одну криптовалюту в іншу \n-Створити твій уявний криптогаманець \n Якщо ви помилилися у виборі команди, ви завжди можете написати 'Показати команди' ",
+                text: "Привіт! Я Cryptobot! Мої функції: \n-Надавати тобі актуальну інформацію про курс криптовалюти \n-Конвертувати одну криптовалюту в іншу \n-Надавати інформацію про терміни криптовалют. \nОбери команду:",
                 replyMarkup: replyKeyboardMarkup
             );
         }
@@ -243,11 +254,68 @@ namespace TelegramBotCrypto
             );
         }
 
+        private async Task HandleShowTermsCommandAsync(Message message)
+        {
+            var terms = await GetCryptoTermsAsync();
+            var termNames = string.Join("\n", terms.Select(t => t.Term));
+
+            await botClient.SendTextMessageAsync(
+                chatId: message.Chat.Id,
+                text: $"Список термінів:\n{termNames}\n\nВведіть 'Термін: [назва]' для отримання значення терміну."
+            );
+        }
+
+        public async Task HandleTermDetailCommandAsync(Message message)
+        {
+            var termName = message.Text.Split(' ')[1];
+            var term = await GetCryptoTermByNameAsync(termName);
+
+            if (term != null)
+            {
+                await botClient.SendTextMessageAsync(message.Chat.Id, $"{term.Term}: {term.Definition}");
+            }
+            else
+            {
+                await botClient.SendTextMessageAsync(message.Chat.Id, "Термін не знайдено.");
+            }
+        }
+
+
+        private async Task<List<CryptoTerm>> GetCryptoTermsAsync()
+        {
+            var response = await httpClient.GetAsync("https://localhost:7201/CryptoTerms");
+            response.EnsureSuccessStatusCode();
+
+            var responseBody = await response.Content.ReadAsStringAsync();
+            return JsonConvert.DeserializeObject<List<CryptoTerm>>(responseBody);
+        }
+
+        public async Task<CryptoTerm> GetCryptoTermByNameAsync(string termName)
+        {
+            try
+            {
+                HttpClient client = new HttpClient();
+                string url = $"https://localhost:7201/cryptoTerms/name/{termName}";
+                string response = await client.GetStringAsync(url);
+
+                CryptoTerm term = JsonConvert.DeserializeObject<CryptoTerm>(response);
+                return term;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error occurred: {ex.Message}");
+                return null;
+            }
+        }
+
+
+
+
         private async Task ShowCommandsAsync(Message message)
         {
             var replyKeyboardMarkup = new ReplyKeyboardMarkup(new[]
             {
-                new KeyboardButton[] { "Отримати курс", "Конвертація", "Створення криптогаманця" }
+                new KeyboardButton[] { "Отримати курс", "Конвертація", "Показати терміни" }
             })
             {
                 ResizeKeyboard = true
