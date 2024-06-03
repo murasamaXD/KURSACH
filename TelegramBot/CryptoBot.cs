@@ -3,6 +3,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Telegram.Bot;
@@ -86,6 +87,22 @@ namespace TelegramBotCrypto
                 {
                     await HandleConversionAmountInputAsync(message);
                 }
+                else if (state == "waiting_for_new_term")
+                {
+                    await HandleNewTermInputAsync(message);
+                }
+                else if (state == "waiting_for_term_id_for_update")
+                {
+                    await HandleTermIdForUpdateInputAsync(message);
+                }
+                else if (state == "waiting_for_new_term_definition")
+                {
+                    await HandleNewTermDefinitionInputAsync(message);
+                }
+                else if (state == "waiting_for_term_id_for_deletion")
+                {
+                    await HandleTermIdForDeletionInputAsync(message);
+                }
             }
             else if (message.Text == "Отримати курс")
             {
@@ -103,11 +120,24 @@ namespace TelegramBotCrypto
             {
                 await ShowCommandsAsync(message);
             }
+            else if (message.Text == "Створити термін")
+            {
+                await HandleCreateTermCommandAsync(message);
+            }
+            else if (message.Text == "Оновити термін")
+            {
+                await HandleUpdateTermCommandAsync(message);
+            }
+            else if (message.Text == "Видалити термін")
+            {
+                await HandleDeleteTermCommandAsync(message);
+            }
             else
             {
                 await HandleUnknownCommandAsync(message);
             }
         }
+
 
         private async Task HandleStartCommandAsync(Message message)
         {
@@ -122,7 +152,7 @@ namespace TelegramBotCrypto
 
             await botClient.SendTextMessageAsync(
                 chatId: message.Chat.Id,
-                text: "Привіт! Я Cryptobot! Мої функції: \n-Надавати тобі актуальну інформацію про курс криптовалюти \n-Конвертувати одну криптовалюту в іншу \n-Надавати інформацію про терміни криптовалют. \nОбери команду:",
+                text: "Привіт! Я Cryptobot! Мої функції: \n-Надавати тобі актуальну інформацію про курс криптовалюти \n-Конвертувати одну криптовалюту в іншу \n-Надавати інформацію про терміни криптовалют. \nДля перегляду повного списку команд ти завжди можеш написати 'Показати команди'  \nОбери команду:",
                 replyMarkup: replyKeyboardMarkup
             );
         }
@@ -315,15 +345,22 @@ namespace TelegramBotCrypto
         {
             var replyKeyboardMarkup = new ReplyKeyboardMarkup(new[]
             {
-                new KeyboardButton[] { "Отримати курс", "Конвертація", "Показати терміни" }
-            })
+        new KeyboardButton[] { "Отримати курс", "Конвертація", "Показати терміни" },
+        new KeyboardButton[] { "Створити термін", "Оновити термін", "Видалити термін" }
+    })
             {
                 ResizeKeyboard = true
             };
 
             await botClient.SendTextMessageAsync(
                 chatId: message.Chat.Id,
-                text: "Ось доступні команди:",
+                text: "Ось доступні команди:\n" +
+                      "- Отримати курс: Отримати актуальний курс криптовалюти\n" +
+                      "- Конвертація: Конвертувати одну криптовалюту в іншу\n" +
+                      "- Показати терміни: Показати список крипто-термінів\n" +
+                      "- Створити термін: Додати новий крипто-термін\n" +
+                      "- Оновити термін: Оновити існуючий крипто-термін\n" +
+                      "- Видалити термін: Видалити крипто-термін",
                 replyMarkup: replyKeyboardMarkup
             );
         }
@@ -359,5 +396,156 @@ namespace TelegramBotCrypto
                 return null;
             }
         }
+
+        private async Task HandleCreateTermCommandAsync(Message message)
+        {
+            await botClient.SendTextMessageAsync(
+                chatId: message.Chat.Id,
+                text: "Введіть термін у форматі 'Термін: Визначення'",
+                replyMarkup: new ReplyKeyboardRemove()
+            );
+            userStates[message.Chat.Id] = "waiting_for_new_term";
+        }
+
+        private async Task HandleNewTermInputAsync(Message message)
+        {
+            var termDefinition = message.Text.Split(':');
+            if (termDefinition.Length == 2)
+            {
+                var newTerm = new CryptoTerm { Term = termDefinition[0].Trim(), Definition = termDefinition[1].Trim() };
+                await CreateTermAsync(newTerm);
+
+                await botClient.SendTextMessageAsync(
+                    chatId: message.Chat.Id,
+                    text: "Термін успішно створено!"
+                );
+
+                userStates.TryRemove(message.Chat.Id, out _);
+            }
+            else
+            {
+                await botClient.SendTextMessageAsync(
+                    chatId: message.Chat.Id,
+                    text: "Некоректний формат. Спробуйте ще раз у форматі 'Термін: Визначення'."
+                );
+            }
+        }
+
+        private async Task CreateTermAsync(CryptoTerm term)
+        {
+            var jsonContent = JsonConvert.SerializeObject(term);
+            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+            var response = await httpClient.PostAsync("https://localhost:7201/CryptoTerms", content);
+            response.EnsureSuccessStatusCode();
+        }
+
+        private async Task HandleUpdateTermCommandAsync(Message message)
+        {
+            await botClient.SendTextMessageAsync(
+                chatId: message.Chat.Id,
+                text: "Введіть ID терміну, який ви хочете оновити:",
+                replyMarkup: new ReplyKeyboardRemove()
+            );
+            userStates[message.Chat.Id] = "waiting_for_term_id_for_update";
+        }
+
+        private async Task HandleTermIdForUpdateInputAsync(Message message)
+        {
+            if (int.TryParse(message.Text, out int termId))
+            {
+                userStates[message.Chat.Id] = "waiting_for_new_term_definition";
+                conversionAmount[message.Chat.Id] = termId;  // Використовуємо conversionAmount для зберігання ID
+                await botClient.SendTextMessageAsync(
+                    chatId: message.Chat.Id,
+                    text: "Введіть нове визначення у форматі 'Термін: Визначення'."
+                );
+            }
+            else
+            {
+                await botClient.SendTextMessageAsync(
+                    chatId: message.Chat.Id,
+                    text: "Некоректний ID. Спробуйте ще раз."
+                );
+            }
+        }
+
+        private async Task HandleNewTermDefinitionInputAsync(Message message)
+        {
+            var termDefinition = message.Text.Split(':');
+            if (termDefinition.Length == 2)
+            {
+                var updatedTerm = new CryptoTerm
+                {
+                    Id = (int)conversionAmount[message.Chat.Id],
+                    Term = termDefinition[0].Trim(),
+                    Definition = termDefinition[1].Trim()
+                };
+                await UpdateTermAsync(updatedTerm);
+
+                await botClient.SendTextMessageAsync(
+                    chatId: message.Chat.Id,
+                    text: "Термін успішно оновлено!"
+                );
+
+                userStates.TryRemove(message.Chat.Id, out _);
+                conversionAmount.TryRemove(message.Chat.Id, out _);
+            }
+            else
+            {
+                await botClient.SendTextMessageAsync(
+                    chatId: message.Chat.Id,
+                    text: "Некоректний формат. Спробуйте ще раз у форматі 'Термін: Визначення'."
+                );
+            }
+        }
+
+        private async Task UpdateTermAsync(CryptoTerm term)
+        {
+            var jsonContent = JsonConvert.SerializeObject(term);
+            var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+            var response = await httpClient.PutAsync($"https://localhost:7201/CryptoTerms/{term.Id}", content);
+            response.EnsureSuccessStatusCode();
+        }
+
+
+        private async Task HandleDeleteTermCommandAsync(Message message)
+        {
+            await botClient.SendTextMessageAsync(
+                chatId: message.Chat.Id,
+                text: "Введіть ID терміну, який ви хочете видалити:",
+                replyMarkup: new ReplyKeyboardRemove()
+            );
+            userStates[message.Chat.Id] = "waiting_for_term_id_for_deletion";
+        }
+
+        private async Task HandleTermIdForDeletionInputAsync(Message message)
+        {
+            if (int.TryParse(message.Text, out int termId))
+            {
+                await DeleteTermAsync(termId);
+
+                await botClient.SendTextMessageAsync(
+                    chatId: message.Chat.Id,
+                    text: "Термін успішно видалено!"
+                );
+
+                userStates.TryRemove(message.Chat.Id, out _);
+            }
+            else
+            {
+                await botClient.SendTextMessageAsync(
+                    chatId: message.Chat.Id,
+                    text: "Некоректний ID. Спробуйте ще раз."
+                );
+            }
+        }
+
+        private async Task DeleteTermAsync(int termId)
+        {
+            var response = await httpClient.DeleteAsync($"https://localhost:7201/CryptoTerms/{termId}");
+            response.EnsureSuccessStatusCode();
+        }
+
+
     }
 }
